@@ -3,4 +3,4 @@ main = "index.js"
 compatibility_date = "2024-01-01"
 
 [triggers]
-crons = ["0 * * * *"] # 每小时的第 0 分钟执行
+crons = ["0 7-23 * * *"] # 每小时的第 0 分钟执行
