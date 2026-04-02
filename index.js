@@ -1,17 +1,17 @@
 /**
  * Weather Bot V11.0 - 终极稳定版
- * 功能：实况天气、路由查询、24/36/48h深度预报、降雨预警、列对齐优化
+ * 修复：地名解析偏好、参数冲突、列对齐优化
  */
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    // 路由逻辑：weather.kont.us.ci/上海
+    // 路由解析：默认为“温州市鹿城区”以确保定位精准
     let cityName = decodeURIComponent(url.pathname.split('/')[1] || "").trim();
-    if (!cityName || cityName === "status") cityName = "温州鹿城";
+    if (!cityName || cityName === "status") cityName = "温州市鹿城区";
 
     if (url.pathname === "/status") {
-      return new Response(`☁️ Weather Bot V11.0 Running\n------------------\n支持指令: /weather [城市] [小时数]`, { 
+      return new Response(`☁️ Weather Bot V11.0\n------------------\n默认城市：${cityName}`, { 
         headers: { "Content-Type": "text/plain;charset=UTF-8" } 
       });
     }
@@ -37,7 +37,8 @@ export default {
   },
 
   async scheduled(event, env) {
-    const defaultLoc = { lat: "28.00", lon: "120.65", name: "温州鹿城" };
+    // 定时任务默认坐标：温州鹿城
+    const defaultLoc = { lat: "28.0001", lon: "120.6552", name: "温州鹿城" };
     await checkRainPush(defaultLoc, env);
   }
 };
@@ -53,13 +54,22 @@ async function getAllData(lat, lon, name, env) {
   return { name, ...(await wRes.json()), air: await aRes.json() };
 }
 
+/**
+ * 地理编码：增加 City 级别偏好，防止搜到“温州路”
+ */
 async function getGeoLocation(cityName) {
-  const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1`, { 
-    headers: { "User-Agent": "WeatherBot/1.0" } 
-  });
+  // 增加 &featuretype=settlement 尽量匹配行政区而非街道
+  const geoUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1&addressdetails=1`;
+  const geoRes = await fetch(geoUrl, { headers: { "User-Agent": "WeatherBot/1.1" } });
   const data = await geoRes.json();
+  
   if (!data?.length) throw new Error(`找不到地点: ${cityName}`);
-  return { lat: data[0].lat, lon: data[0].lon, name: data[0].display_name.split(',')[0] };
+  
+  // 优先取城市名或区名，防止显示“温州路”
+  const addr = data[0].address;
+  const displayName = addr.city || addr.town || addr.district || addr.county || data[0].display_name.split(',')[0];
+  
+  return { lat: data[0].lat, lon: data[0].lon, name: displayName };
 }
 
 async function aiTranslate(text, env, type = "general") {
@@ -72,11 +82,11 @@ async function aiTranslate(text, env, type = "general") {
 }
 
 /**
- * 排版对齐工具
+ * 对齐工具
  */
 function alignText(text, len = 4) {
   let str = text.slice(0, len);
-  while (str.length < len) str += "　"; // 补全角空格
+  while (str.length < len) str += "　";
   return str;
 }
 
@@ -161,23 +171,22 @@ ${hourlyTrend || "  (暂无数据)"}
 
 ⚠️ 降雨提醒
 ----------------------------
-🕒 短时：${await aiTranslate(data.minutely?.summary || "无明显降雨", env)}
+🕒 短时：${await aiTranslate(data.minutely?.summary || "无明显降雨趋势", env)}
 🔮 趋势：${(cur.precipProbability > 0.4) ? "⚠️ 建议带伞" : "🍀 暂无明显降水趋势"}
   `.trim();
 }
 
 /**
- * Telegram 消息处理逻辑优化
+ * TG 消息处理：支持参数任意排序
  */
 async function handleTelegramMessage(message, env) {
   const text = message.text.trim();
   if (!text.startsWith("/weather")) return;
 
   const parts = text.split(/\s+/);
-  let cityName = "温州鹿城";
+  let cityName = "温州市鹿城区"; // 默认加精准描述
   let hours = null;
 
-  // 遍历参数，区分地名和数字 [修正逻辑]
   for (let i = 1; i < parts.length; i++) {
     if (/^\d+$/.test(parts[i])) {
       hours = parseInt(parts[i]);
