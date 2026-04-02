@@ -1,19 +1,24 @@
-name = "weather"
-main = "index.js"
-compatibility_date = "2024-04-02"
-account_id = "853b20cad3dcd818d5f46c1255ce604f"
+name: Deploy Weather Bot
 
-# 关键：只留变量名，不填具体内容！
-[vars]
-QWEATHER_KEY = ""
-CAIYUN_TOKEN = ""
-TG_BOT_TOKEN = ""
-TG_CHAT_ID = ""
+on:
+  push:
+    branches:
+      - main  # 或者是你的主分支名
 
-[[kv_namespaces]]
-binding = "WEATHER_KV"
-id = "17e55cf312b84eab8b9647b1e0aa1269"
-=======
-[triggers]
-crons = ["0 7-23 * * *"] # 每小时的第 0 分钟执行
->>>>>>> 7104864225b3f3e7cf36a6456fb98f5db1aa4c9c
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # 关键：vars 内部的缩进必须比 vars 多两格
+          vars: |
+            TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+            TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
+            QWEATHER_KEY=${{ secrets.QWEATHER_KEY }}
+            CAIYUN_TOKEN=${{ secrets.CAIYUN_TOKEN }}
