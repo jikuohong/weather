@@ -11,4 +11,4 @@ CAIYUN_TOKEN = ""
 
 [[kv_namespaces]]
 binding = "WEATHER_KV"
-id = "17e55cf312b84eab8b9647b1e0aa1269"
+id = "KV_ID"
