@@ -3,13 +3,12 @@ main = "index.js"
 compatibility_date = "2024-04-02"
 account_id = "853b20cad3dcd818d5f46c1255ce604f"
 
-<<<<<<< HEAD
-# 关键：在这里列出所有变量名，这样部署时就不会被覆盖删除了
+# 关键：只留变量名，不填具体内容！
 [vars]
-QWEATHER_KEY = "5cd564a31a5c4ec8834bde5048729cf4"
-CAIYUN_TOKEN = "ilENMw3Qmgaj3jFT"
-TG_BOT_TOKEN = "8717238043:AAG5kQroG27ZUCkehqOk5KInMvvPlOfgT3c"
-TG_CHAT_ID = "663833360"
+QWEATHER_KEY = ""
+CAIYUN_TOKEN = ""
+TG_BOT_TOKEN = ""
+TG_CHAT_ID = ""
 
 [[kv_namespaces]]
 binding = "WEATHER_KV"
