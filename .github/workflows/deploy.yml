@@ -16,7 +16,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 关键：确保 ${{ secrets.XXX }} 里的名字和 GitHub 后台一模一样
+          # 必须确保缩进准确，且变量名与 GitHub Secrets 一致
           vars: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
