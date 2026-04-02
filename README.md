@@ -1,36 +1,29 @@
-# ☁️ Cloudflare Weather Bot (V11.0)
+# ☁️ Weather Bot V12.0 (Dual Engine)
 
-基于 Cloudflare Workers + Workers AI + Pirate Weather API 构建的高级天气机器人。支持 Telegram 交互与 Web 路由查询。
+基于 Cloudflare Workers 的高可用天气机器人，采用 WeatherAPI + Pirate Weather 双引擎架构。
 
-## ✨ 主要功能
-- **智能指令解析**：自动识别城市名与小时数，避免数字被识别为地名。
-- **Web 路由支持**：直接访问 `your-domain.com/上海` 即可获取该城市天气。
-- **深度预报**：支持 `/weather 24` 或 `/weather 杭州 48` 等指令，提供每 3 小时一次的详细趋势。
-- **降雨预警**：定时检测未来 2 小时降水概率，自动推送 Telegram 提醒。
-- **AI 智能翻译**：使用 `Llama-3-8b` 对天气描述进行地道中文翻译。
-- **精美对齐**：针对手机端优化，使用全角空格确保数据列完美对齐。
+## 🌟 核心改进
+- **优先 WeatherAPI**：利用其对国内行政区划（如鹿城区）的精准支持，杜绝定位偏航。
+- **原生中文支持**：主引擎自带中文，跳过 AI 翻译环节，彻底解决 AI 乱码/废话问题。
+- **容灾备份**：若主引擎故障，自动无感切换至 Pirate Weather。
+- **UI 优化**：针对 Telegram 手机端，使用全角空格实现多列数据完美对齐。
 
-## 🛠️ 环境变配置 (Variables)
-在 Workers 设置中添加以下环境变量：
+## 🛠️ 环境变量 (Settings > Variables)
+| 变量名 | 必填 | 说明 |
+| :--- | :--- | :--- |
+| `WEATHERAPI_KEY` | 是 | WeatherAPI.com 的 API KEY |
+| `PIRATE_WEATHER_KEY` | 否 | Pirate Weather 的 API KEY (作为备用) |
+| `TG_BOT_TOKEN` | 是 | Telegram 机器人 Token |
+| `TG_CHAT_ID` | 是 | 降雨提醒推送的目标 ID |
+| `AI` | 是 | 绑定 Workers AI |
+| `WEATHER_KV` | 是 | 绑定名为 `WEATHER_KV` 的 KV 空间 |
 
-| 变量名 | 说明 |
-| :--- | :--- |
-| `PIRATE_WEATHER_KEY` | Pirate Weather API Key (免费) |
-| `TG_BOT_TOKEN` | Telegram Bot API Token |
-| `TG_CHAT_ID` | 降雨推送的目标频道或个人 ID |
-| `AI` | 绑定 Cloudflare Workers AI 目录 |
-| `WEATHER_KV` | 绑定 Cloudflare KV 空间 (用于推送防抖) |
+## ⌨️ 常用指令
+- `/weather` - 鹿城区当前天气
+- `/weather 杭州` - 指定城市天气
+- `/weather 24` - 鹿城区未来 24 小时深度预报 (3h/段)
+- `/weather 上海 48` - 指定城市 48 小时预报
 
-## 📡 触发器配置 (Triggers)
-- **HTTP 路由**：设置你的自定义域名 (如 `weather.kont.us.ci/*`)。
-- **Cron Triggers**：设置 `*/30 * * * *` (每 30 分钟检查一次降雨预警)。
-
-## ⌨️ Telegram 指令
-- `/weather` - 默认显示温州实况预报。
-- `/weather 杭州` - 显示杭州实况预报。
-- `/weather 24` - 显示温州未来 24 小时深度趋势。
-- `/weather 杭州 36` - 显示杭州未来 36 小时深度趋势。
-
-## 🌐 网页访问
-- `https://your-domain.com/` - 默认城市实况。
-- `https://your-domain.com/城市名` - 指定城市实况。
+## 📡 触发器配置
+- **HTTP**: `weather.yourdomain.com/*`
+- **Cron**: `*/30 * * * *` (每30分钟执行一次降雨检测)
