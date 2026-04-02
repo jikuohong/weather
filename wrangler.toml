@@ -1,24 +1,14 @@
-name: Deploy Weather Bot
+name = "weather"
+main = "index.js"
+compatibility_date = "2024-04-02"
 
-on:
-  push:
-    branches:
-      - main  # 如果你的主分支叫 master，请改为 master
+[vars]
+# 保持空值即可，部署时会由 GitHub 自动注入
+TG_BOT_TOKEN = ""
+TG_CHAT_ID = ""
+QWEATHER_KEY = ""
+CAIYUN_TOKEN = ""
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 所有的环境变量在这里统一注入
-          vars: |
-            TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
-            QWEATHER_KEY=${{ secrets.QWEATHER_KEY }}
-            CAIYUN_TOKEN=${{ secrets.CAIYUN_TOKEN }}
+[[kv_namespaces]]
+binding = "WEATHER_KV"
+id = "17e55cf312b84eab8b9647b1e0aa1269"
