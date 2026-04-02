@@ -1,24 +1,14 @@
-name: Deploy Weather Bot
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 关键：secrets 后面跟的名字必须和你在 GitHub 页面上填的一模一样
-          vars: |
-            TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
-            QWEATHER_KEY=${{ secrets.QWEATHER_KEY }}
-            CAIYUN_TOKEN=${{ secrets.CAIYUN_TOKEN }}
+- name: Deploy to Cloudflare Workers
+  env:
+    TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+    TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+    QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
+    CAIYUN_TOKEN: ${{ secrets.CAIYUN_TOKEN }}
+  uses: cloudflare/wrangler-action@v3
+  with:
+    apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    vars: |
+      TG_BOT_TOKEN
+      TG_CHAT_ID
+      QWEATHER_KEY
+      CAIYUN_TOKEN
