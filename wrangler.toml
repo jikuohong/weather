@@ -3,20 +3,20 @@ name: Deploy Weather Bot
 on:
   push:
     branches:
-      - main  # 或者是你的主分支名
+      - main  # 如果你的主分支叫 master，请改为 master
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Deploy to Cloudflare
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 关键：vars 内部的缩进必须比 vars 多两格
+          # 所有的环境变量在这里统一注入
           vars: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
