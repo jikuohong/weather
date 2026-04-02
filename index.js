@@ -117,13 +117,33 @@ async function getGeoLocation(cityName) {
 
 async function aiTranslate(text, env, type = "general") {
   if (!text || !env.AI) return text;
-  const prompt = type === "trend" ? "将天气状态翻译成4个字以内的中文词汇。" : "将天气翻译成地道气象中文。";
+
+  // 这里的 Prompt 进行了“强硬”约束，防止它废话
+  const prompt = type === "trend" 
+    ? "你是一个气象翻译专家。请将输入的天气短语翻译成3-4个字的中文词汇。禁止输出任何解释、标点或多余文字。仅输出翻译结果。" 
+    : "你是一个气象翻译专家。请将天气描述翻译成地道、简洁的中文。禁止回复任何对话内容。仅输出翻译结果。";
+
   try {
     const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
-      messages: [{ role: "system", content: prompt }, { role: "user", content: text }]
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: `待翻译内容: "${text}"` }
+      ],
+      // 降低随机性，让输出更稳定
+      temperature: 0.2 
     });
-    return res.response.trim().replace(/^["']|["']$/g, '');
-  } catch (e) { return text; }
+
+    // 最后的防线：如果 AI 还是话多，我们用正则提取前几个中文字符
+    let result = res.response.trim().replace(/^["']|["']$/g, '');
+    
+    // 如果翻译结果包含了超过 20 个字符（明显是废话），则返回原词或截断
+    if (result.length > 20) {
+      return text; 
+    }
+    return result;
+  } catch (e) { 
+    return text; 
+  }
 }
 
 function alignText(text, len = 4) {
