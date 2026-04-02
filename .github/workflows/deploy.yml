@@ -1,10 +1,10 @@
 - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 关键：将 GitHub 的机密注入到 Cloudflare 的环境变量中
-          vars: |
-            TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            TG_CHAT_ID=${{ vars.TG_CHAT_ID }}
-            QWEATHER_KEY=${{ secrets.QWEATHER_KEY }}
-            CAIYUN_TOKEN=${{ secrets.CAIYUN_TOKEN }}
+  uses: cloudflare/wrangler-action@v3
+  with:
+    apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # 确保 vars: | 下方的缩进对齐
+    vars: |
+      TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID=${{ vars.TG_CHAT_ID }}
+      QWEATHER_KEY=${{ secrets.QWEATHER_KEY }}
+      CAIYUN_TOKEN=${{ secrets.CAIYUN_TOKEN }}
