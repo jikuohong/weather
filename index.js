@@ -58,22 +58,27 @@ export default {
   },
 
   async getGeo(name, key) {
+    // 尝试开发者专用域名，如果不行再换回 geoapi
     const url = `https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(name)}&key=${key}&range=cn`;
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.code === "200" && data.location?.length > 0) {
+      
+      // 这里的 code: "200" 是成功的标志
+      if (data.code === "200" && data.location && data.location.length > 0) {
         const city = data.location[0];
         return { 
           lon: parseFloat(city.lon).toFixed(2), 
           lat: parseFloat(city.lat).toFixed(2), 
           name: city.name 
         };
+      } else {
+        console.log("QWeather Geo Error:", data.code); // 可以在 Logs 里看到错误码
+        return null;
       }
     } catch (e) {
-      console.error("GeoAPI Error:", e.message);
+      return null;
     }
-    return null;
   },
 
   async getFullWeather(env, location, isAutoAlert) {

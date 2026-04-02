@@ -1,6 +1,15 @@
-name = "weather-reminder"
+name = "weather"
 main = "index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-04-02"
+account_id = "853b20cad3dcd818d5f46c1255ce604f"
 
-[triggers]
-crons = ["0 * * * *"] # 每小时的第 0 分钟执行
+# 关键：在这里列出所有变量名，这样部署时就不会被覆盖删除了
+[vars]
+QWEATHER_KEY = ""
+CAIYUN_TOKEN = ""
+TG_BOT_TOKEN = ""
+TG_CHAT_ID = ""
+
+[[kv_namespaces]]
+binding = "WEATHER_KV"
+id = "17e55cf312b84eab8b9647b1e0aa1269"
