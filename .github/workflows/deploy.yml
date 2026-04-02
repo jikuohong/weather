@@ -3,7 +3,7 @@ name: Deploy Weather Bot
 on:
   push:
     branches:
-      - main  # 如果你的主分支叫 master，请改为 master
+      - main
 
 jobs:
   deploy:
@@ -16,7 +16,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # 所有的环境变量在这里统一注入
+          # 关键：确保 ${{ secrets.XXX }} 里的名字和 GitHub 后台一模一样
           vars: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
