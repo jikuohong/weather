@@ -1,10 +1,8 @@
 export default {
   // 核心入口：处理 Telegram Webhook 和浏览器访问
   async fetch(request, env, ctx) {
-    // 逻辑 A：处理来自 Telegram 的 POST 请求
     if (request.method === "POST") {
       try {
-        // 安全检查：如果请求体为空或不是 JSON，直接返回，防止 SyntaxError
         const contentType = request.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
           return new Response("Not a JSON request", { status: 400 });
@@ -12,23 +10,20 @@ export default {
 
         const update = await request.json();
         
-        // 确保收到的是有效的 Telegram 消息
         if (update && update.message && update.message.text) {
           const text = update.message.text.trim();
           
           if (text.startsWith("/weather")) {
             const chatId = update.message.chat.id;
             
-            // 身份校验：只回复你自己的账号 (请确保环境变量 TG_CHAT_ID 正确)
+            // 身份校验
             if (chatId.toString() !== env.TG_CHAT_ID.toString()) {
-              console.log("Unauthorized Access from:", chatId);
               return new Response("Unauthorized", { status: 403 });
             }
 
             let location = "120.65,28.01"; // 默认：温州鹿城
             let locationName = "温州鹿城";
 
-            // 解析地名参数 (例如: /weather 杭州)
             const args = text.split(/\s+/);
             if (args.length > 1) {
               const searchName = args.slice(1).join(" ");
@@ -37,36 +32,31 @@ export default {
                 location = `${geo.lon},${geo.lat}`;
                 locationName = geo.name;
               } else {
-                await this.sendToTG(env, chatId, `❌ 找不到地点：${searchName}\n建议输入省/市/区县全称。`);
+                await this.sendToTG(env, chatId, `❌ 找不到地点：${searchName}`);
                 return new Response("OK");
               }
             }
 
-            // 获取综合天气报告 (和风 + 彩云)
             const report = await this.getFullWeather(env, location, false);
             await this.sendToTG(env, chatId, `📍 ${locationName} 实时预报\n${report}`);
           }
         }
       } catch (e) {
-        // 捕获所有运行错误，防止 Worker 彻底宕机
         console.error("Worker Execution Error:", e.message);
       }
-      return new Response("OK"); // 始终给 TG 返回 200，防止其不断重试
+      return new Response("OK");
     }
 
-    // 逻辑 B：处理浏览器直接访问 (GET)
     const status = await this.getFullWeather(env, "120.65,28.01", false);
     return new Response(status, { 
       headers: { "content-type": "text/plain;charset=UTF-8" } 
     });
   },
 
-  // 逻辑 C：定时任务 (每小时自动检查降雨)
   async scheduled(event, env, ctx) {
     await this.getFullWeather(env, "120.65,28.01", true);
   },
 
-  // 辅助函数 1：地名转经纬度 (使用和风 GeoAPI)
   async getGeo(name, key) {
     const url = `https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(name)}&key=${key}&range=cn`;
     try {
@@ -74,7 +64,6 @@ export default {
       const data = await res.json();
       if (data.code === "200" && data.location?.length > 0) {
         const city = data.location[0];
-        // 返回格式化后的经纬度
         return { 
           lon: parseFloat(city.lon).toFixed(2), 
           lat: parseFloat(city.lat).toFixed(2), 
@@ -87,7 +76,6 @@ export default {
     return null;
   },
 
-  // 辅助函数 2：整合两大 API 数据
   async getFullWeather(env, location, isAutoAlert) {
     const qUrl = `https://devapi.qweather.com/v7/weather/now?location=${location}&key=${env.QWEATHER_KEY}`;
     const cUrl = `https://api.caiyunapp.com/v2.6/${env.CAIYUN_TOKEN}/${location}/hourly?hourlysteps=24`;
@@ -99,7 +87,6 @@ export default {
 
       let report = [];
 
-      // --- 1. 和风天气数据 (实时概况) ---
       if (qData.code === "200") {
         const now = qData.now;
         report.push(`🌡 温度：${now.temp}°C (体感 ${now.feelsLike}°C)`);
@@ -107,16 +94,62 @@ export default {
         report.push(`☁️ 天气：${now.text}`);
       }
 
-      // --- 2. 彩云天气数据 (精准降雨预测) ---
       if (cData.status === "ok") {
         const hourly = cData.result.hourly;
-        const targetHourPcp = hourly.precipitation[2].value; // 2小时后的预测
+        const targetHourPcp = hourly.precipitation[2].value;
 
-        // 自动提醒模式：如果没有降雨则静默
         if (isAutoAlert && targetHourPcp <= 0.05) return "No Rain";
 
         let startTimeRaw = "", duration = 0, maxPcp = 0, foundStart = false;
         for (let i = 0; i < hourly.precipitation.length; i++) {
           const pcp = hourly.precipitation[i].value;
           if (pcp > 0.05) {
-            if (!foundStart) { startTimeRaw = hourly.precipitation[i].datetime; foundStart = true; }
+            if (!foundStart) { 
+              startTimeRaw = hourly.precipitation[i].datetime; 
+              foundStart = true; 
+            }
+            duration++;
+            if (pcp > maxPcp) maxPcp = pcp;
+          } else if (foundStart) {
+            break;
+          }
+        }
+
+        report.push(`------------------`);
+        if (foundStart) {
+          const startObj = new Date(startTimeRaw);
+          const endObj = new Date(startObj.getTime() + duration * 60 * 60 * 1000);
+          const formatTime = (d) => d.toLocaleString("zh-CN", { 
+            timeZone: "Asia/Shanghai", hour: '2-digit', minute: '2-digit', hour12: false 
+          });
+          report.push(`☔️ 降雨预警：${formatTime(startObj)} 开始`);
+          report.push(`⏱ 持续：约 ${duration} 小时 (至 ${formatTime(endObj)})`);
+          report.push(`📊 强度：${maxPcp.toFixed(2)} mm/h`);
+        } else {
+          report.push(`☀️ 未来 24 小时无降雨。`);
+        }
+
+        if (isAutoAlert && foundStart) {
+          const last = await env.WEATHER_KV.get("last_rain_start");
+          if (last === startTimeRaw) return "Already Alerted";
+          await this.sendToTG(env, env.TG_CHAT_ID, `⚠️ 实时降雨预警：\n📍 温州鹿城\n${report.join('\n')}`);
+          await env.WEATHER_KV.put("last_rain_start", startTimeRaw);
+          return "Alert Sent";
+        }
+      }
+
+      return report.join('\n');
+    } catch (e) {
+      return `请求失败: ${e.message}`;
+    }
+  },
+
+  async sendToTG(env, chatId, text) {
+    const url = `https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: text })
+    });
+  }
+};
