@@ -42,6 +42,10 @@ binding = "WEATHER_KV"     # 与代码中 KV 绑定名一致
 id = ""                    # Cloudflare KV 命名空间 ID
 preview_id = ""            # 预览环境 KV ID（与 id 一致即可）
 
+```
+
+
+
 📌 使用说明
 1. Telegram 指令
 指令格式	示例	说明
