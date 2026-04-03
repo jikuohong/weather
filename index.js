@@ -1,17 +1,17 @@
 /**
- * Weather Bot V12.0 - 稳定旗舰版
- * 策略：WeatherAPI (主) + Pirate Weather (备)
- * 特点：原生中文、精准定位、无感容灾、排版对齐
+ * Weather Bot V12.2 - HTML 交互版
+ * 功能：主备引擎自动切换、2小时精准降雨预警、网页端点击跳转雷达图、HTML 渲染
  */
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     let cityName = decodeURIComponent(url.pathname.split('/')[1] || "").trim();
+    
     if (!cityName || cityName === "status") cityName = "温州市鹿城区";
 
     if (url.pathname === "/status") {
-      const s = `☁️ Weather Bot V12.0\n------------------\nPrimary: WeatherAPI\nBackup: Pirate\nStatus: Online`;
+      const s = `☁️ Weather Bot V12.2\n------------------\nPrimary: WeatherAPI\nOutput: HTML/TG Mode\nStatus: Online`;
       return new Response(s, { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
     }
 
@@ -19,8 +19,29 @@ export default {
       try {
         const geo = await getGeoLocation(cityName);
         const data = await getAllData(geo.lat, geo.lon, geo.name, env);
-        const report = await generateFullReport(data, env);
-        return new Response(report, { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+        const report = await generateFullReport(data, env, geo.lat, geo.lon, true); // true 表示网页模式
+        
+        // 包装成 HTML，确保链接可点击且排版不乱
+        const htmlOutput = `
+          <!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>⛅ ${data.name} 天气预报</title>
+            <style>
+              body { font-family: -apple-system, "Noto Sans SC", monospace; line-height: 1.6; padding: 20px; background: #f4f7f6; color: #333; }
+              pre { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); white-space: pre-wrap; font-size: 15px; }
+              a { color: #007bff; text-decoration: none; border-bottom: 1px solid #007bff; }
+              a:hover { color: #0056b3; border-bottom: 2px solid #0056b3; }
+            </style>
+          </head>
+          <body>
+            <pre>${report}</pre>
+          </body>
+          </html>
+        `;
+        return new Response(htmlOutput, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
       } catch (e) {
         return new Response(`❌ 系统异常: ${e.message}`, { status: 500 });
       }
@@ -42,11 +63,10 @@ export default {
 };
 
 /**
- * 核心：双引擎切换逻辑 (WeatherAPI 优先)
+ * 核心：双引擎切换逻辑
  */
 async function getAllData(lat, lon, name, env) {
   try {
-    // 优先使用 WeatherAPI，因为它自带中文且国内定位极准
     return await fetchWeatherAPI(lat, lon, name, env);
   } catch (e) {
     console.log("⚠️ WeatherAPI 故障，尝试切换 Pirate Weather...");
@@ -61,7 +81,7 @@ async function fetchWeatherAPI(lat, lon, name, env) {
   const d = await res.json();
   return {
     source: "WeatherAPI.com",
-    isNativeZh: true, // 标记：已经是中文，不需要 AI 翻译基础词汇
+    isNativeZh: true,
     name: name,
     currently: {
       temperature: d.current.temp_c,
@@ -70,8 +90,7 @@ async function fetchWeatherAPI(lat, lon, name, env) {
       humidity: d.current.humidity / 100,
       windSpeed: (d.current.wind_kph / 3.6).toFixed(1),
       precipIntensity: d.current.precip_mm,
-      precipProbability: d.current.precip_mm > 0 ? 0.5 : 0,
-      minutelySummary: d.current.condition.text // 简易替代
+      precipProbability: d.current.precip_mm > 0 ? 0.5 : 0
     },
     daily: {
       data: d.forecast.forecastday.map(day => ({
@@ -103,21 +122,42 @@ async function fetchPirateWeather(lat, lon, name, env) {
 }
 
 /**
- * 翻译逻辑：仅在非原生中文时触发，且使用强力 Prompt
+ * 降雨推送：提前 2 小时预警
  */
+async function checkRainPush(loc, env) {
+  try {
+    const data = await getAllData(loc.lat, loc.lon, loc.name, env);
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const target = (data.hourly?.data || []).find(h => {
+      const diffMinutes = (h.time - nowEpoch) / 60;
+      return diffMinutes > 45 && diffMinutes < 150 && h.precipProbability > 0.45;
+    });
+    
+    if (target) {
+      const timeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {
+        timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+      const radarUrl = `https://www.windy.com/-Rain-thunder-rain?radar,${loc.lat},${loc.lon},9`;
+      const msg = `🌧️ 降雨预警：预计在 ${timeStr} 左右开始下雨。\n📡 实时雷达：${radarUrl}`;
+      const kvKey = `push_v12.2_${loc.name}_${target.time}`;
+      if (!(await env.WEATHER_KV.get(kvKey))) {
+        await sendToTelegram(env.TG_CHAT_ID, `📍 ${loc.name}\n${msg}`, env);
+        await env.WEATHER_KV.put(kvKey, "true", { expirationTtl: 10800 });
+      }
+    }
+  } catch (e) {}
+}
+
 async function smartTranslate(text, env, isNativeZh, type = "general") {
-  if (!text || isNativeZh) return text; // 已经是中文则直出
-  const prompt = type === "trend" 
-    ? "你是一个气象助手。将输入翻译成3-4个中文字词。严禁任何解释或英文，只给结果。" 
-    : "你是一个气象助手。将天气描述翻译成简洁中文。严禁对话，只给结果。";
-  
+  if (!text || isNativeZh) return text;
+  const prompt = type === "trend" ? "翻译成3-4字气象中文，无废话。" : "将天气描述翻译成简洁中文，无对话。";
   try {
     const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
       messages: [{ role: "system", content: prompt }, { role: "user", content: text }],
       temperature: 0.1
     });
     let result = res.response.trim().replace(/^["']|["']$/g, '');
-    return result.length > 15 ? text : result; // 防止 AI 废话
+    return result.length > 20 ? text : result;
   } catch (e) { return text; }
 }
 
@@ -138,32 +178,7 @@ function alignText(text, len = 4) {
   return str;
 }
 
-function formatPrecip(intensity) {
-  if (!intensity || intensity <= 0) return " 0.0mm";
-  return `${intensity.toFixed(1).padStart(4, ' ')}mm`;
-}
-
-async function generateHourlyDeepReport(data, hours, env) {
-  const hourly = data.hourly.data.slice(0, hours + 1);
-  const sampled = hourly.filter((_, i) => i % 3 === 0);
-  const trends = data.isNativeZh 
-    ? sampled.map(h => h.summary.slice(0,4)) 
-    : await Promise.all(sampled.map(h => smartTranslate(h.summary, env, false, "trend")));
-  
-  let report = `📅 未来 ${hours} 小时深度预报\n📍 ${data.name}\n----------------------------\n`;
-  let lastDate = "";
-  sampled.forEach((h, i) => {
-    const date = new Date(h.time * 1000);
-    const dateStr = date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'short', day: 'numeric' });
-    const timeStr = date.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false });
-    if (dateStr !== lastDate) { report += `\n📅 ${dateStr}\n`; lastDate = dateStr; }
-    report += `  ${timeStr}:00 | ${alignText(trends[i])} | ${h.temperature.toFixed(0).padStart(2, ' ')}°C${h.precipProbability > 0.1 ? ` | 💧${h.precipIntensity.toFixed(1)}mm` : ""}\n`;
-  });
-  report += `\n📊 数据来源: ${data.source}`;
-  return report;
-}
-
-async function generateFullReport(data, env) {
+async function generateFullReport(data, env, lat, lon, isHtml = false) {
   const cur = data.currently;
   const tomorrow = data.daily?.data?.[1];
   const [curStatus, tomSummary] = await Promise.all([
@@ -173,6 +188,8 @@ async function generateFullReport(data, env) {
 
   const aqi = data.air?.current?.european_aqi ?? "--";
   const aqiText = aqi <= 20 ? "优" : aqi <= 40 ? "良" : aqi <= 60 ? "轻污" : "重污";
+  const radarUrl = `https://www.windy.com/-Rain-thunder-rain?radar,${lat},${lon},9`;
+  const radarLink = isHtml ? `<a href="${radarUrl}" target="_blank">点击查看实时雷达波图</a>` : radarUrl;
 
   const bjTomorrow = new Date(tomorrow.time * 1000).toLocaleDateString('en-CA', {timeZone: 'Asia/Shanghai'});
   const selectedHours = (data.hourly?.data || []).filter(h => 
@@ -187,7 +204,7 @@ async function generateFullReport(data, env) {
     
     selectedHours.forEach((h, i) => {
       const time = new Date(h.time * 1000).toLocaleTimeString('zh-CN', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false});
-      hourlyTrend += `  ${time} | ${alignText(trends[i])} | ${h.temperature.toFixed(0).padStart(2, ' ')}°C${h.precipProbability > 0.1 ? ` | 💧${formatPrecip(h.precipIntensity).trim()}` : ""}\n`;
+      hourlyTrend += `  ${time} | ${alignText(trends[i])} | ${h.temperature.toFixed(0).padStart(2, ' ')}°C${h.precipProbability > 0.1 ? ` | 💧${h.precipIntensity.toFixed(1)}mm` : ""}\n`;
     });
   }
 
@@ -195,8 +212,8 @@ async function generateFullReport(data, env) {
 📍 ${data.name} 天气实况
 ----------------------------
 🌡 温度：${cur.temperature.toFixed(1)}°C (体感 ${cur.apparentTemperature.toFixed(1)}°C)
-☁️ 状态：${curStatus} | 💧 湿度：${(cur.humidity * 100).toFixed(0)}%
-💨 风速：${cur.windSpeed} m/s | 🍃 空气：${aqiText} (${aqi})
+☁️ 状态：${curStatus} | 🍃 空气：${aqiText} (${aqi})
+💨 风速：${cur.windSpeed} m/s | 💧 湿度：${(cur.humidity * 100).toFixed(0)}%
 
 📅 明日预报 (${new Date(tomorrow.time * 1000).toLocaleDateString('zh-CN', {timeZone: 'Asia/Shanghai'})})
 ----------------------------
@@ -211,58 +228,31 @@ ${hourlyTrend || "  (暂无数据)"}
 🕒 短时：${data.isNativeZh ? cur.summary : await smartTranslate(data.minutely?.summary || "无明显变化", env, false)}
 🔮 趋势：${(cur.precipProbability > 0.4) ? "⚠️ 建议带伞" : "🍀 暂无明显降水趋势"}
 
-📊 数据来源: ${data.source}
+📡 实时雷达：${radarLink}
+📊 数据来源：${data.source}
   `.trim();
 }
 
 async function handleTelegramMessage(message, env) {
   const text = message.text.trim();
   if (!text.startsWith("/weather")) return;
+  
   const parts = text.split(/\s+/);
-  let cityName = "温州市鹿城区";
-  let hours = null;
-  for (let i = 1; i < parts.length; i++) {
-    if (/^\d+$/.test(parts[i])) { hours = parseInt(parts[i]); } else { cityName = parts[i]; }
-  }
+  // 如果用户只发 /weather，默认鹿城；如果发 /weather 杭州，则提取杭州
+  let cityName = parts.length > 1 ? parts.slice(1).join(" ") : "温州市鹿城区";
+
   try {
+    // 1. 根据用户输入的城市名获取动态坐标
     const geo = await getGeoLocation(cityName);
-    const data = await getAllData(geo.lat, geo.lon, geo.name, env);
-    const report = hours ? await generateHourlyDeepReport(data, Math.min(hours, 48), env) : await generateFullReport(data, env);
-    await sendToTelegram(message.chat.id, report, env);
-  } catch (e) { await sendToTelegram(message.chat.id, `❌ 查询失败: ${e.message}`, env); }
-}
-
-async function checkRainPush(loc, env) {
-  try {
-    const data = await getAllData(loc.lat, loc.lon, loc.name, env);
-    // 增加逻辑：筛选未来 12 小时内概率最高的降雨点
-    const target = (data.hourly?.data || []).slice(0, 12).find(h => h.precipProbability > 0.45);
     
-    if (target) {
-      // 关键修正：使用 options 强制指定时区为亚洲/上海，确保显示具体小时
-      const timeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-
-      const msg = `🌧️ 预警：预计 ${timeStr} 左右有雨\n(来自 ${data.source})`;
-      const kvKey = `push_${loc.name}_${target.time}`;
-      
-      if (!(await env.WEATHER_KV.get(kvKey))) {
-        await sendToTelegram(env.TG_CHAT_ID, `📍 ${loc.name}\n${msg}`, env);
-        await env.WEATHER_KV.put(kvKey, "true", { expirationTtl: 10800 });
-      }
-    }
-  } catch (e) {
-    console.log("Push Error:", e.message);
+    // 2. 使用动态坐标获取天气数据
+    const data = await getAllData(geo.lat, geo.lon, geo.name, env);
+    
+    // 3. 关键修正：将动态获取的 geo.lat 和 geo.lon 传入，确保雷达链接匹配城市
+    const report = await generateFullReport(data, env, geo.lat, geo.lon, false); 
+    
+    await sendToTelegram(message.chat.id, report, env);
+  } catch (e) { 
+    await sendToTelegram(message.chat.id, `❌ 查询失败: ${e.message}`, env); 
   }
-}
-
-async function sendToTelegram(chatId, text, env) {
-  await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: text })
-  });
 }
