@@ -72,6 +72,7 @@ wrangler login
 
 # 3. 部署到 Workers
 wrangler deploy
+
 ⚠️ 注意事项
 WeatherAPI 免费版每月限 1000 次调用，高频使用建议升级套餐
 Telegram 单条消息最大长度 4096 字符，72 小时预报可能自动截断
