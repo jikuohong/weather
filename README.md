@@ -1,4 +1,5 @@
 Weather Bot V12.1
+
 🌤️ 基于 Cloudflare Workers 开发的 Telegram 天气机器人，支持双天气 API 容灾、逐小时预报、降雨预警推送、智能中文翻译
 ✨ 功能特性
 双天气接口容灾：WeatherAPI（主）+ Pirate Weather（备用），自动故障切换
