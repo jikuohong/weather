@@ -1,6 +1,6 @@
 /**
- * Weather Bot V12.2 - HTML 交互版
- * 功能：主备引擎自动切换、2小时精准降雨预警、网页端点击跳转雷达图、HTML 渲染
+ * Weather Bot V12.2 - 最终修正生产版
+ * 处理了 .default 重复定义错误，集成了动态雷达与 2小时降雨预警
  */
 
 export default {
@@ -11,17 +11,15 @@ export default {
     if (!cityName || cityName === "status") cityName = "温州市鹿城区";
 
     if (url.pathname === "/status") {
-      const s = `☁️ Weather Bot V12.2\n------------------\nPrimary: WeatherAPI\nOutput: HTML/TG Mode\nStatus: Online`;
-      return new Response(s, { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+      return new Response("Weather Bot V12.2 Online", { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
     }
 
     if (request.method === "GET") {
       try {
         const geo = await getGeoLocation(cityName);
         const data = await getAllData(geo.lat, geo.lon, geo.name, env);
-        const report = await generateFullReport(data, env, geo.lat, geo.lon, true); // true 表示网页模式
+        const report = await generateFullReport(data, env, geo.lat, geo.lon, true); 
         
-        // 包装成 HTML，确保链接可点击且排版不乱
         const htmlOutput = `
           <!DOCTYPE html>
           <html lang="zh-CN">
@@ -30,15 +28,12 @@ export default {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>⛅ ${data.name} 天气预报</title>
             <style>
-              body { font-family: -apple-system, "Noto Sans SC", monospace; line-height: 1.6; padding: 20px; background: #f4f7f6; color: #333; }
+              body { font-family: -apple-system, sans-serif, monospace; line-height: 1.6; padding: 20px; background: #f4f7f6; color: #333; }
               pre { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); white-space: pre-wrap; font-size: 15px; }
-              a { color: #007bff; text-decoration: none; border-bottom: 1px solid #007bff; }
-              a:hover { color: #0056b3; border-bottom: 2px solid #0056b3; }
+              a { color: #007bff; text-decoration: none; font-weight: bold; }
             </style>
           </head>
-          <body>
-            <pre>${report}</pre>
-          </body>
+          <body><pre>${report}</pre></body>
           </html>
         `;
         return new Response(htmlOutput, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
@@ -57,19 +52,30 @@ export default {
   },
 
   async scheduled(event, env) {
-    const defaultLoc = { lat: "28.0001", lon: "120.6552", name: "温州市鹿城区" };
+    // 自动推送默认地点
+    const defaultLoc = { lat: "28.0188", lon: "120.6507", name: "温州市鹿城区" };
     await checkRainPush(defaultLoc, env);
   }
 };
 
 /**
- * 核心：双引擎切换逻辑
+ * 辅助函数部分
  */
+async function getGeoLocation(cityName) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1&addressdetails=1`, { 
+    headers: { "User-Agent": "WeatherBot/1.2" } 
+  });
+  const data = await res.json();
+  if (!data?.length) throw new Error(`找不到地点: ${cityName}`);
+  const addr = data[0].address;
+  const displayName = addr.city || addr.town || addr.district || addr.county || data[0].display_name.split(',')[0];
+  return { lat: data[0].lat, lon: data[0].lon, name: displayName };
+}
+
 async function getAllData(lat, lon, name, env) {
   try {
     return await fetchWeatherAPI(lat, lon, name, env);
   } catch (e) {
-    console.log("⚠️ WeatherAPI 故障，尝试切换 Pirate Weather...");
     return await fetchPirateWeather(lat, lon, name, env);
   }
 }
@@ -80,9 +86,7 @@ async function fetchWeatherAPI(lat, lon, name, env) {
   if (!res.ok) throw new Error("WeatherAPI Fail");
   const d = await res.json();
   return {
-    source: "WeatherAPI.com",
-    isNativeZh: true,
-    name: name,
+    source: "WeatherAPI.com", isNativeZh: true, name: name,
     currently: {
       temperature: d.current.temp_c,
       apparentTemperature: d.current.feelslike_c,
@@ -94,19 +98,12 @@ async function fetchWeatherAPI(lat, lon, name, env) {
     },
     daily: {
       data: d.forecast.forecastday.map(day => ({
-        time: day.date_epoch,
-        temperatureLow: day.day.mintemp_c,
-        temperatureHigh: day.day.maxtemp_c,
-        summary: day.day.condition.text
+        time: day.date_epoch, temperatureLow: day.day.mintemp_c, temperatureHigh: day.day.maxtemp_c, summary: day.day.condition.text
       }))
     },
     hourly: {
       data: d.forecast.forecastday.flatMap(day => day.hour.map(h => ({
-        time: h.time_epoch,
-        summary: h.condition.text,
-        temperature: h.temp_c,
-        precipIntensity: h.precip_mm,
-        precipProbability: h.chance_of_rain / 100
+        time: h.time_epoch, summary: h.condition.text, temperature: h.temp_c, precipIntensity: h.precip_mm, precipProbability: h.chance_of_rain / 100
       })))
     },
     air: { current: { european_aqi: d.current.air_quality["gb-defra-index"] * 10 } }
@@ -121,9 +118,6 @@ async function fetchPirateWeather(lat, lon, name, env) {
   return { name, ...(await wRes.json()), air: await aRes.json(), source: "Pirate Weather", isNativeZh: false };
 }
 
-/**
- * 降雨推送：提前 2 小时预警
- */
 async function checkRainPush(loc, env) {
   try {
     const data = await getAllData(loc.lat, loc.lon, loc.name, env);
@@ -150,26 +144,14 @@ async function checkRainPush(loc, env) {
 
 async function smartTranslate(text, env, isNativeZh, type = "general") {
   if (!text || isNativeZh) return text;
-  const prompt = type === "trend" ? "翻译成3-4字气象中文，无废话。" : "将天气描述翻译成简洁中文，无对话。";
+  const prompt = type === "trend" ? "翻译成3-4字气象中文。" : "将天气描述翻译成简洁中文。";
   try {
     const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
       messages: [{ role: "system", content: prompt }, { role: "user", content: text }],
       temperature: 0.1
     });
-    let result = res.response.trim().replace(/^["']|["']$/g, '');
-    return result.length > 20 ? text : result;
+    return res.response.trim().replace(/^["']|["']$/g, '');
   } catch (e) { return text; }
-}
-
-async function getGeoLocation(cityName) {
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1&addressdetails=1`, { 
-    headers: { "User-Agent": "WeatherBot/1.2" } 
-  });
-  const data = await res.json();
-  if (!data?.length) throw new Error(`找不到地点: ${cityName}`);
-  const addr = data[0].address;
-  const displayName = addr.city || addr.town || addr.district || addr.county || data[0].display_name.split(',')[0];
-  return { lat: data[0].lat, lon: data[0].lon, name: displayName };
 }
 
 function alignText(text, len = 4) {
@@ -198,10 +180,7 @@ async function generateFullReport(data, env, lat, lon, isHtml = false) {
 
   let hourlyTrend = "";
   if (selectedHours.length > 0) {
-    const trends = data.isNativeZh 
-      ? selectedHours.map(h => h.summary.slice(0,4))
-      : await Promise.all(selectedHours.map(h => smartTranslate(h.summary, env, false, "trend")));
-    
+    const trends = data.isNativeZh ? selectedHours.map(h => h.summary.slice(0,4)) : await Promise.all(selectedHours.map(h => smartTranslate(h.summary, env, false, "trend")));
     selectedHours.forEach((h, i) => {
       const time = new Date(h.time * 1000).toLocaleTimeString('zh-CN', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false});
       hourlyTrend += `  ${time} | ${alignText(trends[i])} | ${h.temperature.toFixed(0).padStart(2, ' ')}°C${h.precipProbability > 0.1 ? ` | 💧${h.precipIntensity.toFixed(1)}mm` : ""}\n`;
@@ -236,23 +215,22 @@ ${hourlyTrend || "  (暂无数据)"}
 async function handleTelegramMessage(message, env) {
   const text = message.text.trim();
   if (!text.startsWith("/weather")) return;
-  
   const parts = text.split(/\s+/);
-  // 如果用户只发 /weather，默认鹿城；如果发 /weather 杭州，则提取杭州
-  let cityName = parts.length > 1 ? parts.slice(1).join(" ") : "温州市鹿城区";
+  const cityName = parts.length > 1 ? parts.slice(1).join(" ") : "温州市鹿城区";
 
   try {
-    // 1. 根据用户输入的城市名获取动态坐标
     const geo = await getGeoLocation(cityName);
-    
-    // 2. 使用动态坐标获取天气数据
     const data = await getAllData(geo.lat, geo.lon, geo.name, env);
-    
-    // 3. 关键修正：将动态获取的 geo.lat 和 geo.lon 传入，确保雷达链接匹配城市
     const report = await generateFullReport(data, env, geo.lat, geo.lon, false); 
-    
     await sendToTelegram(message.chat.id, report, env);
   } catch (e) { 
     await sendToTelegram(message.chat.id, `❌ 查询失败: ${e.message}`, env); 
   }
+}
+
+async function sendToTelegram(chatId, text, env) {
+  await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: text })
+  });
 }
