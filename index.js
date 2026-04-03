@@ -79,7 +79,16 @@ async function fetchWeatherAPI(lat, lon, name, env) {
         time: day.date_epoch,
         temperatureLow: day.day.mintemp_c,
         temperatureHigh: day.day.maxtemp_c,
-        summary: day.day.condition.text
+        avgTemp: day.day.avgtemp_c,
+        summary: day.day.condition.text,
+        humidity: day.day.avghumidity,               // 平均湿度 %
+        precipMm: day.day.totalprecip_mm,            // 总降水量 mm
+        precipChance: day.day.daily_chance_of_rain,  // 降水概率 %
+        maxWindKph: day.day.maxwind_kph,             // 最大风速 kph
+        avgVisKm: day.day.avgvis_km,                 // 平均能见度 km
+        uvIndex: day.day.uv,                         // 紫外线指数
+        sunrise: day.astro.sunrise,                  // 日出
+        sunset: day.astro.sunset                     // 日落
       }))
     },
     hourly: {
@@ -264,6 +273,18 @@ async function generateFullReport(data, env) {
 
   const rainTrend = cur.precipProbability > 0.4 ? "⚠️ 建议带伞" : "🍀 暂无明显降水趋势";
 
+  // 明日详细字段
+  const tomDateStr   = tomorrow ? new Date(tomorrow.time * 1000).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : "N/A";
+  const tomTempRange = tomorrow ? `${tomorrow.temperatureLow.toFixed(1)}°C ~ ${tomorrow.temperatureHigh.toFixed(1)}°C（均温 ${tomorrow.avgTemp?.toFixed(1) ?? "--"}°C）` : "N/A";
+  const tomHumidity  = tomorrow?.humidity     != null ? `${tomorrow.humidity}%`                         : "--";
+  const tomPrecip    = tomorrow?.precipMm     != null ? `${tomorrow.precipMm.toFixed(1)} mm`             : "--";
+  const tomChance    = tomorrow?.precipChance != null ? `${tomorrow.precipChance}%`                     : "--";
+  const tomWind      = tomorrow?.maxWindKph   != null ? `${(tomorrow.maxWindKph / 3.6).toFixed(1)} m/s` : "--";
+  const tomVis       = tomorrow?.avgVisKm     != null ? `${tomorrow.avgVisKm.toFixed(1)} km`            : "--";
+  const tomUV        = tomorrow?.uvIndex      != null ? uvLabel(tomorrow.uvIndex)                       : "--";
+  const tomSunrise   = tomorrow?.sunrise ?? "--";
+  const tomSunset    = tomorrow?.sunset  ?? "--";
+
   return `
 📍 ${data.name} 天气实况
 ----------------------------
@@ -271,10 +292,14 @@ async function generateFullReport(data, env) {
 ☁️ 状态：${curStatus} | 💧 湿度：${(cur.humidity * 100).toFixed(0)}%
 💨 风速：${cur.windSpeed} m/s | 🍃 空气：${aqiText} (${aqi})
 
-📅 明日预报（${tomorrow ? new Date(tomorrow.time * 1000).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : "N/A"}）
+📅 明日预报（${tomDateStr}）
 ----------------------------
-🌡 范围：${tomorrow ? `${tomorrow.temperatureLow.toFixed(1)}°C ~ ${tomorrow.temperatureHigh.toFixed(1)}°C` : "N/A"}
-📝 总结：${tomSummary}
+🌡 温度：${tomTempRange}
+☁️ 总结：${tomSummary}
+💧 湿度：${tomHumidity} | 🌂 降水：${tomPrecip}（概率 ${tomChance}）
+💨 最大风：${tomWind} | 👁 能见度：${tomVis}
+🔆 紫外线：${tomUV}
+🌅 日出：${tomSunrise} | 🌇 日落：${tomSunset}
 
 ⌛ 明日逐小时趋势（06-22时）
 ${hourlyTrend || "  (暂无数据)"}
@@ -285,6 +310,15 @@ ${hourlyTrend || "  (暂无数据)"}
 
 📊 数据来源: ${data.source}
   `.trim();
+}
+
+// UV 指数文字说明
+function uvLabel(uv) {
+  if (uv <= 2)  return `${uv} 低`;
+  if (uv <= 5)  return `${uv} 中等`;
+  if (uv <= 7)  return `${uv} 高`;
+  if (uv <= 10) return `${uv} 很高`;
+  return `${uv} 极高`;
 }
 
 // ─────────────────────────────────────────────
