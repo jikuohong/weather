@@ -1,6 +1,7 @@
 Weather Bot V12.1
 
 🌤️ 基于 Cloudflare Workers 开发的 Telegram 天气机器人，支持双天气 API 容灾、逐小时预报、降雨预警推送、智能中文翻译
+
 ✨ 功能特性
 双天气接口容灾：WeatherAPI（主）+ Pirate Weather（备用），自动故障切换
 精准地理定位：支持城市 / 区县 / 乡镇级地址解析
@@ -9,8 +10,10 @@ Weather Bot V12.1
 定时降雨推送：未来 12 小时降雨预警，KV 去重防重复推送
 美观排版：Telegram 消息对齐、标准化数值展示
 HTTP 查询接口：支持浏览器直接访问查询天气
+
 🚀 部署环境
 本项目运行于 Cloudflare Workers，无需服务器，一键部署
+
 🔧 环境变量配置
 表格
 变量名	说明	是否必填
@@ -19,6 +22,7 @@ PIRATE_WEATHER_KEY	Pirate Weather 备用密钥	✅ 是
 TG_BOT_TOKEN	Telegram 机器人 Token	✅ 是
 TG_CHAT_ID	接收降雨推送的聊天 ID	✅ 是
 WEATHER_KV	Cloudflare KV 绑定（去重用）	✅ 是
+
 📦 wrangler.toml 配置
 toml
 name = "weather-bot"
