@@ -363,27 +363,68 @@ async function checkRainPush(loc, env) {
     const data = await getAllData(loc.lat, loc.lon, loc.name, env);
     const nowEpoch = Math.floor(Date.now() / 1000);
 
-    // 未来 12 小时内概率最高的降雨点
-    const target = (data.hourly?.data || [])
-      .filter(h => h.time >= nowEpoch)
-      .slice(0, 12)
-      .find(h => h.precipProbability > 0.45);
+    // ✅ 核心修复：只看「1.5~3小时后」的降雨窗口
+    // 调度每小时运行一次，预报10点有雨 → 8点运行时窗口覆盖到10点 → 推送
+    // kvKey 去重，9点运行时不重复推送
+    const WARN_MIN = 1.5 * 3600; // 最少提前 1.5 小时
+    const WARN_MAX = 3.0 * 3600; // 最多提前 3 小时
 
-    if (target) {
-      const timeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
+    const candidates = (data.hourly?.data || []).filter(h => {
+      const diff = h.time - nowEpoch;
+      return diff >= WARN_MIN && diff <= WARN_MAX && h.precipProbability > 0.4;
+    });
 
-      const msg = `🌧️ 预警：预计 ${timeStr} 左右有雨\n(来自 ${data.source})`;
-      const kvKey = `push_${loc.name}_${target.time}`;
+    if (candidates.length === 0) return;
 
-      if (!(await env.WEATHER_KV.get(kvKey))) {
-        await sendToTelegram(env.TG_CHAT_ID, `📍 ${loc.name}\n${msg}`, env);
-        await env.WEATHER_KV.put(kvKey, "true", { expirationTtl: 10800 });
-      }
+    // 取概率最高的那个小时作为预警目标
+    const target = candidates.reduce((a, b) =>
+      b.precipProbability > a.precipProbability ? b : a
+    );
+
+    const rainTimeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {
+      timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    const nowTimeStr = new Date(nowEpoch * 1000).toLocaleTimeString('zh-CN', {
+      timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false
+    });
+
+    // 降雨强度描述
+    const mm = target.precipIntensity ?? 0;
+    const intensity = mm <= 0   ? "无明显降水"
+                    : mm < 2.5  ? "小雨"
+                    : mm < 8    ? "中雨"
+                    : mm < 16   ? "大雨"
+                    : "暴雨";
+
+    // 连续降雨时长（从目标小时起，连续概率 > 0.4 的小时数）
+    const allFuture = (data.hourly?.data || []).filter(h => h.time >= target.time);
+    let rainDuration = 0;
+    for (const h of allFuture) {
+      if (h.precipProbability > 0.4) rainDuration++;
+      else break;
+    }
+
+    const advanceHours = Math.round((target.time - nowEpoch) / 3600 * 10) / 10;
+    const lines = [
+      `🌧️ 降雨预警`,
+      `─────────────────`,
+      `📍 地点：${loc.name}`,
+      `⏰ 预计：${rainTimeStr} 左右开始下雨`,
+      `🕒 发出：${nowTimeStr}（提前约 ${advanceHours} 小时）`,
+      ``,
+      `☔ 强度：${intensity}`,
+      `💧 雨量：${mm > 0 ? mm.toFixed(1) + " mm/h" : "微量"}`,
+      `📊 概率：${(target.precipProbability * 100).toFixed(0)}%`,
+      rainDuration > 1 ? `⏳ 预计持续：约 ${rainDuration} 小时` : ``,
+      ``,
+      `📡 来源：${data.source}`,
+    ].filter(line => line !== ``).join(`\n`);
+
+    const kvKey = `push_${loc.name}_${target.time}`;
+    if (!(await env.WEATHER_KV.get(kvKey))) {
+      await sendToTelegram(env.TG_CHAT_ID, lines, env);
+      // TTL 4 小时，防止同一降雨事件重复推送
+      await env.WEATHER_KV.put(kvKey, "true", { expirationTtl: 4 * 3600 });
     }
   } catch (e) {
     console.log("Push Error:", e.message);
