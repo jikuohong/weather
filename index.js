@@ -235,17 +235,29 @@ async function handleTelegramMessage(message, env) {
 async function checkRainPush(loc, env) {
   try {
     const data = await getAllData(loc.lat, loc.lon, loc.name, env);
-    const target = (data.hourly?.data || []).slice(0, 3).find(h => h.precipProbability > 0.45);
+    // 增加逻辑：筛选未来 12 小时内概率最高的降雨点
+    const target = (data.hourly?.data || []).slice(0, 12).find(h => h.precipProbability > 0.45);
+    
     if (target) {
-      const timeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit'});
+      // 关键修正：使用 options 强制指定时区为亚洲/上海，确保显示具体小时
+      const timeStr = new Date(target.time * 1000).toLocaleTimeString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+
       const msg = `🌧️ 预警：预计 ${timeStr} 左右有雨\n(来自 ${data.source})`;
       const kvKey = `push_${loc.name}_${target.time}`;
+      
       if (!(await env.WEATHER_KV.get(kvKey))) {
         await sendToTelegram(env.TG_CHAT_ID, `📍 ${loc.name}\n${msg}`, env);
         await env.WEATHER_KV.put(kvKey, "true", { expirationTtl: 10800 });
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.log("Push Error:", e.message);
+  }
 }
 
 async function sendToTelegram(chatId, text, env) {
