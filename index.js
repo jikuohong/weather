@@ -37,7 +37,7 @@ export default {
   },
 
   async scheduled(event, env) {
-    const defaultLoc = { lat: "28.0001", lon: "120.6552", name: "温州市鹿城区" };
+    const defaultLoc = { lat: "28.00677", lon: "120.68284", name: "温州市鹿城区" };
     await checkRainPush(defaultLoc, env);
   }
 };
