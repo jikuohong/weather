@@ -413,7 +413,7 @@ Nominatim 支持中英文，建议：
 ```js
 async scheduled(event, env) {
   const locations = [
-    { lat: "28.0001", lon: "120.6552", name: "温州市鹿城区" },
+    { lat: "28.00677", lon: "120.68284", name: "温州市鹿城区" },
     { lat: "30.2741", lon: "120.1551", name: "杭州市" },
     { lat: "31.2304", lon: "121.4737", name: "上海市" },
   ];
