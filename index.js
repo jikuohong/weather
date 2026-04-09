@@ -224,10 +224,12 @@ async function generateHourlyDeepReport(data, hours, env) {
 
 async function generateFullReport(data, env) {
   const cur = data.currently;
+  const today    = data.daily?.data?.[0];
   const tomorrow = data.daily?.data?.[1];
 
-  const [curStatus, tomSummary] = await Promise.all([
+  const [curStatus, todaySummary, tomSummary] = await Promise.all([
     smartTranslate(cur.summary, env, data.isNativeZh),
+    smartTranslate(today?.summary    || "", env, data.isNativeZh),
     smartTranslate(tomorrow?.summary || "", env, data.isNativeZh)
   ]);
 
@@ -238,7 +240,52 @@ async function generateFullReport(data, env) {
     : aqi <= 60 ? "轻污"
     : "重污";
 
-  // 明日逐小时（06-22时，每隔2小时）
+  // ── 今日详细字段 ──────────────────────────────
+  const todayDateStr   = today ? new Date(today.time * 1000).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : "N/A";
+  const todayTempRange = today ? `${today.temperatureLow.toFixed(1)}°C ~ ${today.temperatureHigh.toFixed(1)}°C（均温 ${today.avgTemp?.toFixed(1) ?? "--"}°C）` : "N/A";
+  const todayHumidity  = today?.humidity     != null ? `${today.humidity}%`                         : "--";
+  const todayPrecip    = today?.precipMm     != null ? `${today.precipMm.toFixed(1)} mm`             : "--";
+  const todayChance    = today?.precipChance != null ? `${today.precipChance}%`                     : "--";
+  const todayWind      = today?.maxWindKph   != null ? `${(today.maxWindKph / 3.6).toFixed(1)} m/s` : "--";
+  const todayVis       = today?.avgVisKm     != null ? `${today.avgVisKm.toFixed(1)} km`            : "--";
+  const todayUV        = today?.uvIndex      != null ? uvLabel(today.uvIndex)                       : "--";
+  const todaySunrise   = today?.sunrise ?? "--";
+  const todaySunset    = today?.sunset  ?? "--";
+
+  // ── 今日剩余逐小时趋势（当前时刻 → 22时，每隔2小时）──
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  const bjToday = today
+    ? new Date(today.time * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    : null;
+
+  let todayHourlyTrend = "";
+  if (bjToday) {
+    const todayHours = (data.hourly?.data || [])
+      .filter(h => {
+        const dateStr = new Date(h.time * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+        const hourOfDay = new Date(h.time * 1000).toLocaleString('en-US', { timeZone: 'Asia/Shanghai', hour: 'numeric', hour12: false });
+        return dateStr === bjToday && h.time > nowEpoch && parseInt(hourOfDay) <= 22;
+      })
+      .filter((_, i) => i % 2 === 0);  // 每隔2小时取一条
+
+    if (todayHours.length > 0) {
+      const trends = data.isNativeZh
+        ? todayHours.map(h => h.summary.slice(0, 4))
+        : await Promise.all(todayHours.map(h => smartTranslate(h.summary, env, false, "trend")));
+
+      todayHours.forEach((h, i) => {
+        const time = new Date(h.time * 1000).toLocaleTimeString('zh-CN', {
+          timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false
+        });
+        const rainTag = h.precipProbability > 0.1
+          ? ` | 💧${formatPrecip(h.precipIntensity).trim()}`
+          : "";
+        todayHourlyTrend += `  ${time} | ${alignText(trends[i])} | ${h.temperature.toFixed(0).padStart(2, ' ')}°C${rainTag}\n`;
+      });
+    }
+  }
+
+  // ── 明日逐小时趋势（06-22时，每隔2小时）────────────
   const bjTomorrow = tomorrow
     ? new Date(tomorrow.time * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
     : null;
@@ -266,14 +313,14 @@ async function generateFullReport(data, env) {
     }
   }
 
-  // 短时降水提示
+  // ── 短时降水提示 ───────────────────────────────────
   const shortTermRain = data.isNativeZh
     ? cur.summary
     : await smartTranslate(data.minutely?.summary || "无明显变化", env, false);
 
   const rainTrend = cur.precipProbability > 0.4 ? "⚠️ 建议带伞" : "🍀 暂无明显降水趋势";
 
-  // 明日详细字段
+  // ── 明日详细字段 ───────────────────────────────────
   const tomDateStr   = tomorrow ? new Date(tomorrow.time * 1000).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : "N/A";
   const tomTempRange = tomorrow ? `${tomorrow.temperatureLow.toFixed(1)}°C ~ ${tomorrow.temperatureHigh.toFixed(1)}°C（均温 ${tomorrow.avgTemp?.toFixed(1) ?? "--"}°C）` : "N/A";
   const tomHumidity  = tomorrow?.humidity     != null ? `${tomorrow.humidity}%`                         : "--";
@@ -292,6 +339,17 @@ async function generateFullReport(data, env) {
 ☁️ 状态：${curStatus} | 💧 湿度：${(cur.humidity * 100).toFixed(0)}%
 💨 风速：${cur.windSpeed} m/s | 🍃 空气：${aqiText} (${aqi})
 
+📅 今日预报（${todayDateStr}）
+----------------------------
+🌡 温度：${todayTempRange}
+☁️ 总结：${todaySummary}
+💧 湿度：${todayHumidity} | 🌂 降水：${todayPrecip}（概率 ${todayChance}）
+💨 最大风：${todayWind} | 👁 能见度：${todayVis}
+🔆 紫外线：${todayUV}
+🌅 日出：${todaySunrise} | 🌇 日落：${todaySunset}
+
+⌛ 今日剩余逐小时趋势
+${todayHourlyTrend || "  (今日小时数据已结束或暂无)"}
 📅 明日预报（${tomDateStr}）
 ----------------------------
 🌡 温度：${tomTempRange}
